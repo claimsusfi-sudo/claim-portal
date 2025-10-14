@@ -1,0 +1,1 @@
+web: gunicorn Claim_portal_test:app

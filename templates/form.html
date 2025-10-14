@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Coretec Claim Portal</title>
+    <style>
+        /* General Styles */
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            background-color: #ffffff;
+            color: #0B1D51;
+        }
+        h1, h2 { color: #0B1D51; }
+        h1 { text-align: center; margin-top: 20px; }
+        h2 { margin-top: 30px; border-bottom: 2px solid #0B1D51; padding-bottom: 5px; }
+
+        /* Form container */
+        form {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 25px;
+            background-color: #f5f5f5;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input, select, textarea { 
+            width: 100%; 
+            padding: 10px; 
+            margin-top: 5px; 
+            border-radius: 5px; 
+            border: 1px solid #0B1D51;
+            font-size: 14px; 
+        }
+        textarea { resize: vertical; }
+
+        /* Radio buttons */
+        .radio-group { display: flex; flex-wrap: wrap; margin-top: 5px; }
+        .radio-group label { margin-right: 20px; font-weight: normal; }
+
+        /* File Inputs */
+        .file-input { margin-top: 10px; }
+
+        /* External Link */
+        .external-link { 
+            margin-top: 15px; 
+            padding: 15px; 
+            border-radius: 8px;
+            background-color: #e0e7ff; 
+            border: 1px solid #0B1D51; 
+        }
+
+        /* Submit Button */
+        .submit-btn { 
+            margin-top: 25px; 
+            padding: 12px 25px; 
+            font-size: 16px; 
+            background-color: #0B1D51; 
+            color: #ffffff; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: 0.3s;
+        }
+        .submit-btn:hover { background-color: #132E63; }
+
+        /* Flash Messages */
+        .flash { 
+            margin-top: 10px; 
+            padding: 10px; 
+            border-radius: 5px; 
+            background-color: #FF6B6B; 
+            color: #fff; 
+        }
+
+        /* Two-column layout */
+        .row { display: flex; gap: 20px; flex-wrap: wrap; }
+        .row > div { flex: 1; min-width: 200px; }
+
+    </style>
+    <script>
+        const MAX_UPLOAD_MB = Number("{{ max_upload_mb }}");
+
+        function toggleEvidence() {
+            const defect = document.querySelector('input[name="defect"]:checked');
+            const evidenceDiv = document.getElementById("evidence_photos_div");
+            if(defect && defect.value === "Peaking/Cupping") {
+                evidenceDiv.style.display = "block";
+            } else {
+                evidenceDiv.style.display = "none";
+            }
+        }
+
+        function toggleExternalLink() {
+            const issueFiles = document.getElementById("issue_photos").files;
+            const evidenceFiles = document.getElementById("evidence_photos").files;
+            let totalSize = 0;
+            for(let f of issueFiles) totalSize += f.size;
+            for(let f of evidenceFiles) totalSize += f.size;
+
+            const linkDiv = document.getElementById("external_link_div");
+            if(totalSize > MAX_UPLOAD_MB * 1024 * 1024) {
+                linkDiv.style.display = "block";
+            } else {
+                linkDiv.style.display = "none";
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Coretec Claim Submission Portal</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form action="/" method="POST" enctype="multipart/form-data" onsubmit="toggleExternalLink()">
+
+        <!-- Contact Details -->
+        <h2>Contact Details</h2>
+        <div class="row">
+            <div><label>Phone Number:</label><input type="text" name="phone" required></div>
+            <div><label>Email:</label><input type="email" name="email" required></div>
+        </div>
+        <div class="row">
+            <div><label>Order Date (DDMMYY):</label><input type="text" name="order_date" required></div>
+            <div><label>Move-in Date (DDMMYY):</label><input type="text" name="move_in_date" required></div>
+        </div>
+        <div class="row">
+            <div><label>Order Size (m²):</label><input type="text" name="order_size" required></div>
+            <div><label>Area Affected (m²):</label><input type="text" name="area_affected" required></div>
+        </div>
+        <div class="row">
+            <div><label>Subfloor Type:</label><input type="text" name="subfloor_type" required></div>
+            <div><label>Attic Stock Samples (Y/N):</label><input type="text" name="attic_stock" required></div>
+        </div>
+        <div class="row">
+            <div><label>Underfloor Heating (Y/N):</label><input type="text" name="underfloor_heating" required></div>
+        </div>
+
+        <!-- Order & Installation -->
+        <h2>Order Details</h2>
+        <div class="row">
+            <div><label>USFloors Invoice #:</label><input type="text" name="invoice_number"></div>
+            <div><label>Item Reference:</label><input type="text" name="item_reference"></div>
+        </div>
+
+        <h2>Installation Details</h2>
+        <div class="row">
+            <div><label>Installation Date (DDMMYY):</label><input type="text" name="installation_date"></div>
+            <div><label>Date of Issue (DDMMYY):</label><input type="text" name="issue_date"></div>
+        </div>
+        <div class="row">
+            <div><label>Total Installation Size (m²):</label><input type="text" name="total_install_size"></div>
+            <div><label>Installed Samples Available (Y/N):</label><input type="text" name="installed_samples"></div>
+        </div>
+        <div class="row">
+            <div><label>Expansion Gaps (mm):</label><input type="text" name="expansion_gaps"></div>
+            <div><label>Underlayment (Y/N):</label><input type="text" name="underlayment"></div>
+        </div>
+
+        <!-- Defects (radio buttons) -->
+        <h2>Defects</h2>
+        <div class="radio-group">
+            <label><input type="radio" name="defect" value="Peaking/Cupping" onchange="toggleEvidence()" required> Peaking/Cupping</label>
+            <label><input type="radio" name="defect" value="Bubble Defect" onchange="toggleEvidence()"> Bubble Defect</label>
+            <label><input type="radio" name="defect" value="Delamination" onchange="toggleEvidence()"> Delamination</label>
+            <label><input type="radio" name="defect" value="Discoloration" onchange="toggleEvidence()"> Discoloration</label>
+            <label><input type="radio" name="defect" value="Other" onchange="toggleEvidence()"> Other</label>
+        </div>
+
+        <!-- Photos -->
+        <h2>Photos</h2>
+        <label>Issue Photos (optional if using external link):</label>
+        <input type="file" id="issue_photos" name="issue_photos" multiple onchange="toggleExternalLink()" class="file-input">
+
+        <div id="evidence_photos_div" style="display:none;">
+            <label>Evidence of Correct Installation (required for Peaking/Cupping):</label>
+            <input type="file" id="evidence_photos" name="evidence_photos" multiple onchange="toggleExternalLink()" class="file-input">
+        </div>
+
+        <!-- External link for photos -->
+        <div class="external-link">
+            <label>External Link to Photos (Google Drive, OneDrive, etc.):</label>
+            <input type="url" name="external_link" placeholder="https://drive.google.com/...">
+            <small>Ensure the link is public or shareable.</small>
+        </div>
+
+        <!-- Defect Description -->
+        <h2>Defect Description</h2>
+        <label>Description of Defect:</label>
+        <textarea name="defect_description" rows="4"></textarea>
+
+        <button type="submit" class="submit-btn">Submit Claim</button>
+    </form>
+</body>
+</html>
