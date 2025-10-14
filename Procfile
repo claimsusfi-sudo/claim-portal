@@ -1,1 +1,1 @@
-web: gunicorn Claim_portal_test:app
+web: gunicorn claim_portal_test:app
