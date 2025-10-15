@@ -2,23 +2,25 @@ from flask import Flask, render_template, request, redirect, flash, url_for, sen
 import os
 import uuid
 import base64
-import sendgrid
-from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
+from mailjet_rest import Client
 
 app = Flask(__name__)
 app.secret_key = "secret-key"
 app.config["UPLOAD_FOLDER"] = "uploads"
-app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB per request
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB
 
 # Ensure upload folder exists
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 # =======================
-# EMAIL SETTINGS (SendGrid)
+# MAILJET SETTINGS
 # =======================
-SENDGRID_API_KEY = "b513b321fa8995f3140314b153291c5a"  # For testing only
-EMAIL_SENDER = "arthur.cuigniez@usfloors.be"  # Must be verified in SendGrid
+MAILJET_API_KEY = os.environ.get("MAILJET_API_KEY", "b513b321fa8995f3140314b153291c5a")
+MAILJET_API_SECRET = os.environ.get("MAILJET_API_SECRET", "a2681af7c9ed8dce6010046efcbbc06f")
+EMAIL_SENDER = "arthur.cuigniez@usfloors.be"  # Must be verified in Mailjet
 RECIPIENTS = ["arthur.cuigniez@usfloors.be", "edouard.dossche@usfloors.be"]
+
+mailjet = Client(auth=(MAILJET_API_KEY, MAILJET_API_SECRET), version='v3.1')
 
 # ------------------------------
 # Serve uploaded files
@@ -37,7 +39,7 @@ def claim_form():
         issue_files = request.files.getlist("issue_photos")
         evidence_files = request.files.getlist("evidence_photos")
         external_link = request.form.get("external_link")
-        link_public = request.form.get("link_public")  # 'yes' or 'no'
+        link_public = request.form.get("link_public")
 
         # -----------------------
         # Mandatory fields
@@ -58,9 +60,6 @@ def claim_form():
         for f in issue_files + evidence_files:
             f.seek(0)
 
-        # -----------------------
-        # Save files locally
-        # -----------------------
         issue_paths = []
         evidence_paths = []
 
@@ -68,9 +67,9 @@ def claim_form():
             for file in file_list:
                 if file.filename != "":
                     filename = f"{uuid.uuid4().hex}_{file.filename}"
-                    file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-                    file.save(file_path)
-                    target_list.append(file_path)
+                    path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+                    file.save(path)
+                    target_list.append(path)
 
         save_files(issue_files, issue_paths)
         save_files(evidence_files, evidence_paths)
@@ -96,39 +95,42 @@ def claim_form():
                     body += f" - {os.path.basename(f)}\n"
 
         # -----------------------
-        # Send email with SendGrid
+        # Send email via Mailjet
         # -----------------------
         try:
-            message = Mail(
-                from_email=EMAIL_SENDER,
-                to_emails=RECIPIENTS,
-                subject='New Coretec Claim Submission',
-                plain_text_content=body
-            )
-
-            # Attach files if total size <= 25 MB
+            attachments = []
             if total_size <= app.config["MAX_CONTENT_LENGTH"]:
-                for file_path in issue_paths + evidence_paths:
-                    with open(file_path, "rb") as f:
-                        encoded = base64.b64encode(f.read()).decode()
-                    attachment = Attachment(
-                        FileContent(encoded),
-                        FileName(os.path.basename(file_path)),
-                        FileType("application/octet-stream"),
-                        Disposition("attachment")
-                    )
-                    message.add_attachment(attachment)
+                for fpath in issue_paths + evidence_paths:
+                    with open(fpath, "rb") as f:
+                        content = f.read()
+                    encoded_content = base64.b64encode(content).decode()  # Python 3 compatible
+                    attachments.append({
+                        "ContentType": "application/octet-stream",
+                        "Filename": os.path.basename(fpath),
+                        "Base64Content": encoded_content
+                    })
 
-            sg = sendgrid.SendGridAPIClient(api_key=SENDGRID_API_KEY)
-            response = sg.send(message)
+            data = {
+                'Messages': [
+                    {
+                        "From": {"Email": EMAIL_SENDER, "Name": "Claim Portal"},
+                        "To": [{"Email": r} for r in RECIPIENTS],
+                        "Subject": "New Coretec Claim Submission",
+                        "TextPart": body,
+                        "Attachments": attachments
+                    }
+                ]
+            }
 
-            if response.status_code in [200, 202]:
-                flash("Claim submitted successfully! Email sent via SendGrid.", "success")
+            result = mailjet.send.create(data=data)
+
+            if result.status_code in [200, 201]:
+                flash("Claim submitted successfully! Email sent via Mailjet.", "success")
             else:
-                flash(f"Claim saved, but SendGrid email failed: {response.status_code}", "error")
+                flash(f"Claim saved, but Mailjet email failed: {result.status_code}", "error")
 
         except Exception as e:
-            flash(f"Claim saved, but SendGrid email failed: {e}", "error")
+            flash(f"Claim saved, but Mailjet email failed: {e}", "error")
 
         return redirect(request.url)
 

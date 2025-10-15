@@ -1,3 +1,4 @@
 flask
 gunicorn
+mailjet-rest
 sendgrid
