@@ -1,8 +1,9 @@
 from flask import Flask, render_template, request, redirect, flash, url_for, send_from_directory
 import os
 import uuid
-import smtplib
-from email.message import EmailMessage
+import base64
+import sendgrid
+from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 
 app = Flask(__name__)
 app.secret_key = "secret-key"
@@ -13,12 +14,10 @@ app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB per request
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 # =======================
-# EMAIL SETTINGS
+# EMAIL SETTINGS (SendGrid)
 # =======================
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-EMAIL_USER = "claims.usfi@gmail.com"       # Your sending email
-EMAIL_PASS = "wtet orlx drgb kspv"            # Your Gmail app password
+SENDGRID_API_KEY = "b513b321fa8995f3140314b153291c5a"  # For testing only
+EMAIL_SENDER = "arthur.cuigniez@usfloors.be"  # Must be verified in SendGrid
 RECIPIENTS = ["arthur.cuigniez@usfloors.be", "edouard.dossche@usfloors.be"]
 
 # ------------------------------
@@ -56,63 +55,80 @@ def claim_form():
         # Check file sizes
         # -----------------------
         total_size = sum(len(f.read()) for f in issue_files + evidence_files)
-        # reset file pointer
         for f in issue_files + evidence_files:
             f.seek(0)
 
-        if total_size > app.config["MAX_CONTENT_LENGTH"]:
-            if not external_link or link_public != "yes":
-                flash("Total file size exceeds 25 MB. Please provide a public external link for large files.", "error")
-                return redirect(request.url)
-        else:
-            # Save files locally
-            issue_links = []
-            evidence_links = []
+        # -----------------------
+        # Save files locally
+        # -----------------------
+        issue_paths = []
+        evidence_paths = []
 
-            def save_files(file_list, target_list):
-                for file in file_list:
-                    if file.filename != "":
-                        filename = f"{uuid.uuid4().hex}_{file.filename}"
-                        file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-                        file.save(file_path)
-                        link = url_for('uploaded_file', filename=filename, _external=True)
-                        target_list.append(link)
+        def save_files(file_list, target_list):
+            for file in file_list:
+                if file.filename != "":
+                    filename = f"{uuid.uuid4().hex}_{file.filename}"
+                    file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+                    file.save(file_path)
+                    target_list.append(file_path)
 
-            save_files(issue_files, issue_links)
-            save_files(evidence_files, evidence_links)
+        save_files(issue_files, issue_paths)
+        save_files(evidence_files, evidence_paths)
 
         # -----------------------
-        # Send email with links
+        # Build email body
+        # -----------------------
+        body = "Coretec Claim Submission Details:\n\n"
+        for key, value in request.form.items():
+            body += f"{key}: {value}\n"
+        body += f"Defects selected: {', '.join(defects_selected)}\n\n"
+
+        if total_size > app.config["MAX_CONTENT_LENGTH"]:
+            body += f"External link provided: {external_link} (Link is public: {link_public})\n"
+        else:
+            if issue_paths:
+                body += "Issue Photos attached:\n"
+                for f in issue_paths:
+                    body += f" - {os.path.basename(f)}\n"
+            if evidence_paths:
+                body += "Evidence Photos attached:\n"
+                for f in evidence_paths:
+                    body += f" - {os.path.basename(f)}\n"
+
+        # -----------------------
+        # Send email with SendGrid
         # -----------------------
         try:
-            msg = EmailMessage()
-            msg['Subject'] = f'New Coretec Claim Submission'
-            msg['From'] = EMAIL_USER
-            msg['To'] = ", ".join(RECIPIENTS)
+            message = Mail(
+                from_email=EMAIL_SENDER,
+                to_emails=RECIPIENTS,
+                subject='New Coretec Claim Submission',
+                plain_text_content=body
+            )
 
-            body = "Coretec Claim Submission Details:\n\n"
-            for key, value in request.form.items():
-                body += f"{key}: {value}\n"
-            body += f"Defects selected: {', '.join(defects_selected)}\n\n"
-
+            # Attach files if total size <= 25 MB
             if total_size <= app.config["MAX_CONTENT_LENGTH"]:
-                if issue_files:
-                    body += "Issue Photos:\n" + "\n".join(issue_links) + "\n\n"
-                if evidence_files:
-                    body += "Evidence Photos:\n" + "\n".join(evidence_links) + "\n\n"
+                for file_path in issue_paths + evidence_paths:
+                    with open(file_path, "rb") as f:
+                        encoded = base64.b64encode(f.read()).decode()
+                    attachment = Attachment(
+                        FileContent(encoded),
+                        FileName(os.path.basename(file_path)),
+                        FileType("application/octet-stream"),
+                        Disposition("attachment")
+                    )
+                    message.add_attachment(attachment)
+
+            sg = sendgrid.SendGridAPIClient(api_key=SENDGRID_API_KEY)
+            response = sg.send(message)
+
+            if response.status_code in [200, 202]:
+                flash("Claim submitted successfully! Email sent via SendGrid.", "success")
             else:
-                body += f"External link provided: {external_link} (Link is public: {link_public})\n"
+                flash(f"Claim saved, but SendGrid email failed: {response.status_code}", "error")
 
-            msg.set_content(body)
-
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-                server.starttls()
-                server.login(EMAIL_USER, EMAIL_PASS)
-                server.send_message(msg)
-
-            flash("Claim submitted successfully! Email sent.", "success")
         except Exception as e:
-            flash(f"Claim saved, but email failed: {e}", "error")
+            flash(f"Claim saved, but SendGrid email failed: {e}", "error")
 
         return redirect(request.url)
 
