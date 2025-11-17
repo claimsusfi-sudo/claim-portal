@@ -1,26 +1,24 @@
-from flask import Flask, render_template, request, redirect, flash, url_for, send_from_directory
+from flask import Flask, render_template, request, redirect, flash, send_from_directory
 import os
 import uuid
+import smtplib
 import base64
-from mailjet_rest import Client
+from email.message import EmailMessage
 
 app = Flask(__name__)
-app.secret_key = "secret-key"
+app.secret_key = "srys sizr telm tvbq"
 app.config["UPLOAD_FOLDER"] = "uploads"
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB
 
 # Ensure upload folder exists
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-# =======================
-# MAILJET SETTINGS
-# =======================
-MAILJET_API_KEY = os.environ.get("MAILJET_API_KEY", "b513b321fa8995f3140314b153291c5a")
-MAILJET_API_SECRET = os.environ.get("MAILJET_API_SECRET", "a2681af7c9ed8dce6010046efcbbc06f")
-EMAIL_SENDER = "claims.usfi@gmail.com"  # Must be verified in Mailjet
+# ------------------------------
+# Gmail SMTP settings
+# ------------------------------
+EMAIL_SENDER = "claims.usfi@gmail.com"
+EMAIL_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")  # store app password in env variable
 RECIPIENTS = ["arthur.cuigniez@usfloors.be", "edouard.dossche@usfloors.be"]
-
-mailjet = Client(auth=(MAILJET_API_KEY, MAILJET_API_SECRET), version='v3.1')
 
 # ------------------------------
 # Serve uploaded files
@@ -95,46 +93,42 @@ def claim_form():
                     body += f" - {os.path.basename(f)}\n"
 
         # -----------------------
-        # Send email via Mailjet
+        # Send email via Gmail SMTP
         # -----------------------
         try:
-            attachments = []
-            if total_size <= app.config["MAX_CONTENT_LENGTH"]:
-                for fpath in issue_paths + evidence_paths:
+            msg = EmailMessage()
+            msg["Subject"] = "New Coretec Claim Submission"
+            msg["From"] = EMAIL_SENDER
+            msg["To"] = ", ".join(RECIPIENTS)
+            msg.set_content(body)
+
+            # Attach files if not too big
+            for fpath in issue_paths + evidence_paths:
+                filesize = os.path.getsize(fpath)
+                if filesize <= 25 * 1024 * 1024:  # 25 MB limit
                     with open(fpath, "rb") as f:
-                        content = f.read()
-                    encoded_content = base64.b64encode(content).decode()  # Python 3 compatible
-                    attachments.append({
-                        "ContentType": "application/octet-stream",
-                        "Filename": os.path.basename(fpath),
-                        "Base64Content": encoded_content
-                    })
+                        file_data = f.read()
+                    msg.add_attachment(file_data,
+                                       maintype="application",
+                                       subtype="octet-stream",
+                                       filename=os.path.basename(fpath))
+                else:
+                    body += f"\n{os.path.basename(fpath)} is too large to attach."
 
-            data = {
-                'Messages': [
-                    {
-                        "From": {"Email": EMAIL_SENDER, "Name": "Claim Portal"},
-                        "To": [{"Email": r} for r in RECIPIENTS],
-                        "Subject": "New Coretec Claim Submission",
-                        "TextPart": body,
-                        "Attachments": attachments
-                    }
-                ]
-            }
+            # Send email
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+                smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
+                smtp.send_message(msg)
 
-            result = mailjet.send.create(data=data)
-
-            if result.status_code in [200, 201]:
-                flash("Claim submitted successfully! Email sent via Mailjet.", "success")
-            else:
-                flash(f"Claim saved, but Mailjet email failed: {result.status_code}", "error")
+            flash("Claim submitted successfully! Email sent via Gmail.", "success")
 
         except Exception as e:
-            flash(f"Claim saved, but Mailjet email failed: {e}", "error")
+            flash(f"Claim saved, but Gmail email failed: {e}", "error")
 
         return redirect(request.url)
 
     return render_template("form.html", max_upload_mb=25)
+
 
 if __name__ == "__main__":
     app.run(debug=True)
