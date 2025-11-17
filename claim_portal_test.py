@@ -17,7 +17,7 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 # =======================
 MAILJET_API_KEY = os.environ.get("MAILJET_API_KEY", "b513b321fa8995f3140314b153291c5a")
 MAILJET_API_SECRET = os.environ.get("MAILJET_API_SECRET", "a2681af7c9ed8dce6010046efcbbc06f")
-EMAIL_SENDER = "arthur.cuigniez@usfloors.be"  # Must be verified in Mailjet
+EMAIL_SENDER = "claims.usfi@gmail.com"  # Must be verified in Mailjet
 RECIPIENTS = ["arthur.cuigniez@usfloors.be", "edouard.dossche@usfloors.be"]
 
 mailjet = Client(auth=(MAILJET_API_KEY, MAILJET_API_SECRET), version='v3.1')
